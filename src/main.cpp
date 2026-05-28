@@ -67,13 +67,6 @@ void setup(){
   //LED initialisieren
   FastLED.addLeds<SK9822,DATA_PIN,CLOCK_PIN,RBG>(leds, NUM_LEDS);
 
-  adc1_config_width(ADC_WIDTH_BIT_12);
-  adc1_config_channel_atten((adc1_channel_t)ADC_UB, ADC_ATTEN_DB_12);
-  gpio_set_direction((gpio_num_t)BUTTONSLEFT, GPIO_MODE_INPUT);
-  gpio_set_direction((gpio_num_t)BUTTONSRIGHT, GPIO_MODE_INPUT);
-  gpio_set_pull_mode((gpio_num_t)BUTTONSLEFT, GPIO_PULLUP_ONLY);
-  gpio_set_pull_mode((gpio_num_t)BUTTONSRIGHT, GPIO_PULLUP_ONLY);
-
   pinMode(MOTOR_R_DIR, OUTPUT); 
   pinMode(MOTOR_R_PWM, OUTPUT);
   pinMode(MOTOR_L_DIR, OUTPUT);
