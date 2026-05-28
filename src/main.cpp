@@ -1,141 +1,172 @@
 #include <Arduino.h>
-#include "drv8835.h"
-#include <WiFi.h>
-#include <WebServer.h>
+#include <FastLED.h>
+#include "pins.h"
+#include "driver/gpio.h"
 
-const char* htmlPage = R"rawliteral(
-<!DOCTYPE html>
-<html>
-<head>
-  <title>HTL-BOT Control</title>
-  <style>
-    body {
-      font-family: Arial;
-      text-align: center;
-      padding: 20px;
-    }
+#define PROG  1   // 1: Ladeprogramm, 2: Hauptprogramm
+#define ADC_1V 775
 
-    .slider-container {
-      display: inline-block;
-      margin: 40px;
-      height: 300px;
-      width: 60px;
-      position: relative;
-    }
+CRGB leds[NUM_LEDS];
 
-    input[type=range] {
-      width: 250px;
-      transform: rotate(-90deg);
-      position: absolute;
-      top: 120px;
-      left: -95px;
-    }
+void ledAllBlack();
+void ledAllColour(CRGB colour);
 
-    label {
-      display: block;
-      margin-bottom: 10px;
-    }
-  </style>
-</head>
+#if(PROG == 1)
 
-<body>
-  <h1>HTL-BOT Motorsteuerung</h1>
-  <p><b>WASD</b> = fahren | Slider = manuell</p>
+//Lade
+void setup(){
 
-  <div class="slider-container">
-    <label>Links<br><span id="leftVal">0</span></label>
-    <input type="range" id="left" min="-255" max="255" value="0"
-           oninput="updateMotors()">
-  </div>
+  pinMode(MOTOR_R_DIR, OUTPUT); 
+  pinMode(MOTOR_R_PWM, OUTPUT);
+  pinMode(MOTOR_L_DIR, OUTPUT);
+  pinMode(MOTOR_L_PWM, OUTPUT);
 
-  <div class="slider-container">
-    <label>Rechts<br><span id="rightVal">0</span></label>
-    <input type="range" id="right" min="-255" max="255" value="0"
-           oninput="updateMotors()">
-  </div>
+  digitalWrite(MOTOR_R_DIR, LOW);
+  digitalWrite(MOTOR_R_PWM, LOW);
+  digitalWrite(MOTOR_L_DIR, LOW);
+  digitalWrite(MOTOR_L_PWM, LOW);
 
-  <script>
-  const SPEED = 180;
+  pinMode(LED_COLOURSENSOR, OUTPUT);
+  digitalWrite(LED_COLOURSENSOR, LOW);
 
-  function sendMotors(l, r) {
-    document.getElementById('left').value  = l;
-    document.getElementById('right').value = r;
+  //LED initialisieren
+  FastLED.addLeds<SK9822,DATA_PIN,CLOCK_PIN,RBG>(leds, NUM_LEDS);
 
-    document.getElementById('leftVal').innerText  = l;
-    document.getElementById('rightVal').innerText = r;
+  leds[LED_RV] = CRGB::Green;
+  leds[LED_RH] = CRGB::Black;
+  leds[LED_LV] = CRGB::Black;
+  leds[LED_LH] = CRGB::Black;
+  FastLED.show();
 
-    fetch(`/motor?l=${l}&r=${r}`);
-  }
+  leds[LED_RV] = CRGB::Black;
+  FastLED.show();
 
-  document.addEventListener('keydown', (e) => {
-    if (e.repeat) return;
-
-    switch (e.key.toLowerCase()) {
-      case 'a':
-        sendMotors(0, SPEED);
-        break;
-
-      case 'd':
-        sendMotors(SPEED, 0);
-        break;
-
-      case 'w':
-        sendMotors(SPEED, SPEED);
-        break;
-    }
-  });
-
-  document.addEventListener('keyup', (e) => {
-    if (['a', 'd', 'w'].includes(e.key.toLowerCase())) {
-      sendMotors(0, 0);
-    }
-  });
-</script>
-
-
-</body>
-</html>
-)rawliteral";
-
-
-const char* ssid = "HTL-BOT";
-const char* password = "12345678"; // min. 8 Zeichen
-
-WebServer server(80);
-
-void handle_motor() {
-    int left  = server.arg("l").toInt();  
-    int right = server.arg("r").toInt();
-
-    motor_set_left(left);
-    motor_set_right(right);
-
-    server.send(200, "text/plain", "OK");
+  //ESP Sleep
+  esp_sleep_enable_timer_wakeup(4000000UL);
+  esp_deep_sleep_start();
 }
 
+void loop(){
 
-void setup() {
+}
+
+#elif(PROG == 2)
+
+#include <BluetoothSerial.h>
+#include <driver/adc.h>
+
+void checkVoltage();
+
+//Haupt
+void setup(){
+
   Serial.begin(115200);
-  motor_init();
 
-  WiFi.mode(WIFI_AP);
-  WiFi.softAP(ssid, password);
+  pinMode(ADC_UB, INPUT);
 
-  Serial.print("AP IP: ");
-  Serial.println(WiFi.softAPIP());
+  //LED initialisieren
+  FastLED.addLeds<SK9822,DATA_PIN,CLOCK_PIN,RBG>(leds, NUM_LEDS);
 
-  server.on("/", []() {
-  server.send(200, "text/html", htmlPage);
-});
+  adc1_config_width(ADC_WIDTH_BIT_12);
+  adc1_config_channel_atten((adc1_channel_t)ADC_UB, ADC_ATTEN_DB_12);
+  gpio_set_direction((gpio_num_t)BUTTONSLEFT, GPIO_MODE_INPUT);
+  gpio_set_direction((gpio_num_t)BUTTONSRIGHT, GPIO_MODE_INPUT);
+  gpio_set_pull_mode((gpio_num_t)BUTTONSLEFT, GPIO_PULLUP_ONLY);
+  gpio_set_pull_mode((gpio_num_t)BUTTONSRIGHT, GPIO_PULLUP_ONLY);
 
-  server.on("/motor", handle_motor);
-  server.begin();
-
-  Serial.println("Webserver gestartet");
-
-
+  pinMode(MOTOR_R_DIR, OUTPUT); 
+  pinMode(MOTOR_R_PWM, OUTPUT);
+  pinMode(MOTOR_L_DIR, OUTPUT);
+  pinMode(MOTOR_L_PWM, OUTPUT);
 }
 
-void loop() {
-    server.handleClient();
+void loop(){
+  checkVoltage();  
+  if(gpio_get_level((gpio_num_t)BUTTONSLEFT) || gpio_get_level((gpio_num_t)BUTTONSRIGHT)){
+    leds[LED_RV] = CRGB::Purple;
+    leds[LED_LV] = CRGB::Purple;
+    FastLED.show();
+  }
+}
+
+void checkVoltage(){
+  int start = 0;
+  int adcCount = 0;
+  unsigned long batteryVoltage = 0;
+  unsigned long durchschnitt = 0;
+
+  if(millis() >= start + 10){
+    start = millis();
+
+    while(adcCount < 200){
+      batteryVoltage = batteryVoltage + adc1_get_raw((adc1_channel_t)ADC_UB);
+      adcCount++;
+    }
+    if(adcCount >= 200){
+      durchschnitt = batteryVoltage/adcCount;
+      Serial.printf("Durchschnitt: %u\n", durchschnitt);
+      if(durchschnitt > 3.69 * ADC_1V){
+        
+        ledAllColour(CRGB::Green);
+        
+        delay(20);
+
+        ledAllBlack();
+
+        adcCount = 0;
+      } else if(durchschnitt <= 3.69 * ADC_1V && durchschnitt > 3.3 * ADC_1V){
+        
+        ledAllColour(CRGB::Yellow);
+
+        delay(20);
+
+        ledAllBlack();
+
+        adcCount = 0;
+      } else if(durchschnitt < 3.3 * ADC_1V){
+        while(1){
+          digitalWrite(MOTOR_R_DIR, LOW);
+          digitalWrite(MOTOR_R_PWM, LOW);
+          digitalWrite(MOTOR_L_DIR, LOW);
+          digitalWrite(MOTOR_L_PWM, LOW);
+
+          pinMode(LED_COLOURSENSOR, OUTPUT);
+          digitalWrite(LED_COLOURSENSOR, LOW);
+
+          //LED initialisieren
+          FastLED.addLeds<SK9822,DATA_PIN,CLOCK_PIN,RBG>(leds, NUM_LEDS);
+
+          ledAllColour(CRGB::Red);
+
+          delay(20);
+
+          ledAllBlack();
+
+          //ESP Sleep
+          esp_sleep_enable_timer_wakeup(4000000UL);
+          esp_deep_sleep_start();
+        }
+      }
+    }
+  } 
+}
+
+#endif
+
+
+
+void ledAllBlack(){
+  leds[LED_RV] = CRGB::Black;
+  leds[LED_RH] = CRGB::Black;
+  leds[LED_LV] = CRGB::Black;
+  leds[LED_LH] = CRGB::Black;
+  FastLED.show();
+}
+
+void ledAllColour(CRGB colour){
+  leds[LED_RV] = colour;
+  leds[LED_RH] = colour;
+  leds[LED_LV] = colour;
+  leds[LED_LH] = colour;
+  FastLED.show();
 }
