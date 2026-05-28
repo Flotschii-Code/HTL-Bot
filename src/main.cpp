@@ -1,9 +1,10 @@
 #include <Arduino.h>
 #include <FastLED.h>
-#include "pins.h"
+#include "../lib/pins.h"
 #include "driver/gpio.h"
+#include "InterruptTimer.h"
 
-#define PROG  1   // 1: Ladeprogramm, 2: Hauptprogramm
+#define PROG  2   // 1: Ladeprogramm, 2: Hauptprogramm
 #define ADC_1V 775
 
 CRGB leds[NUM_LEDS];
@@ -71,14 +72,19 @@ void setup(){
   pinMode(MOTOR_R_PWM, OUTPUT);
   pinMode(MOTOR_L_DIR, OUTPUT);
   pinMode(MOTOR_L_PWM, OUTPUT);
+
+  pinMode(BUTTONSLEFT, INPUT_PULLUP);
+  pinMode(BUTTONSRIGHT, INPUT_PULLUP);
+
 }
 
 void loop(){
   checkVoltage();  
-  if(gpio_get_level((gpio_num_t)BUTTONSLEFT) || gpio_get_level((gpio_num_t)BUTTONSRIGHT)){
+  if(digitalRead(BUTTONSLEFT) == 0 || digitalRead(BUTTONSRIGHT) == 0){
     leds[LED_RV] = CRGB::Purple;
     leds[LED_LV] = CRGB::Purple;
     FastLED.show();
+    delay(500);
   }
 }
 
@@ -92,7 +98,7 @@ void checkVoltage(){
     start = millis();
 
     while(adcCount < 200){
-      batteryVoltage = batteryVoltage + adc1_get_raw((adc1_channel_t)ADC_UB);
+      batteryVoltage = batteryVoltage + analogRead((ADC_UB));
       adcCount++;
     }
     if(adcCount >= 200){
@@ -101,19 +107,11 @@ void checkVoltage(){
       if(durchschnitt > 3.69 * ADC_1V){
         
         ledAllColour(CRGB::Green);
-        
-        delay(20);
-
-        ledAllBlack();
 
         adcCount = 0;
       } else if(durchschnitt <= 3.69 * ADC_1V && durchschnitt > 3.3 * ADC_1V){
         
         ledAllColour(CRGB::Yellow);
-
-        delay(20);
-
-        ledAllBlack();
 
         adcCount = 0;
       } else if(durchschnitt < 3.3 * ADC_1V){
